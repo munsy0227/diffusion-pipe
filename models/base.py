@@ -192,16 +192,58 @@ class BasePipeline:
                 bias='none',
                 target_modules=target_linear_modules
             )
+            self.peft_config = peft_config
+            self.lora_model = peft.get_peft_model(self.transformer, peft_config)
+            if is_main_process():
+                self.lora_model.print_trainable_parameters()
+            for name, p in self.transformer.named_parameters():
+                p.original_name = name
+                if p.requires_grad:
+                    p.data = p.data.to(adapter_config['dtype'])
+        elif adapter_type == 'lokr':
+            from lycoris import create_lycoris
+            kw = {
+                "linear_dim": adapter_config['rank'],
+                "linear_alpha": adapter_config['alpha'],
+                "algo": adapter_config.get('algo', 'lokr'),
+                "dropout": adapter_config.get('dropout', 0.0),
+                "rank_dropout": adapter_config.get('rank_dropout', 0.0),
+                "module_dropout": adapter_config.get('module_dropout', 0.0),
+                "use_tucker": adapter_config.get('use_tucker', False),
+                "use_scalar": adapter_config.get('use_scalar', False),
+                "use_cp": adapter_config.get('use_cp', False),
+                "decompose_both": adapter_config.get('decompose_both', False),
+                "factor": adapter_config.get('decompose_factor', -1),
+                "dora_wd": adapter_config.get('dora_wd', False),
+                "preset": adapter_config.get('preset', 'full'),
+                "train_norm": adapter_config.get('train_norm', False),
+            }
+            if 'conv_dim' in adapter_config:
+                kw['conv_dim'] = adapter_config['conv_dim']
+                kw['conv_alpha'] = adapter_config['alpha']
+
+            if self.config['model']['type'] == 'cosmos_predict2' and kw.get('train_norm', False):
+                if is_main_process():
+                    print("Disabling train_norm for CosmosPredict2 as it uses affine-false normalization.")
+                kw['train_norm'] = False
+
+            self.lora_model = create_lycoris(self.transformer, 1.0, **kw)
+            self.lora_model.apply_to()
+
+            if is_main_process():
+                print(f"Created LyCORIS LoKr module with config: {kw}")
+
+            for name, p in self.transformer.named_parameters():
+                p.original_name = name
+                if p.requires_grad:
+                    p.data = p.data.to(adapter_config['dtype'])
+
+            # Ensure all LyCORIS parameters are on the correct device and dtype
+            for module in self.lora_model.modules():
+                for p in module.parameters():
+                    p.data = p.data.to(device='cuda', dtype=adapter_config['dtype'])
         else:
             raise NotImplementedError(f'Adapter type {adapter_type} is not implemented')
-        self.peft_config = peft_config
-        self.lora_model = peft.get_peft_model(self.transformer, peft_config)
-        if is_main_process():
-            self.lora_model.print_trainable_parameters()
-        for name, p in self.transformer.named_parameters():
-            p.original_name = name
-            if p.requires_grad:
-                p.data = p.data.to(adapter_config['dtype'])
 
     def save_adapter(self, save_dir, peft_state_dict):
         raise NotImplementedError()
@@ -468,16 +510,53 @@ class ComfyPipeline:
                 bias='none',
                 target_modules=target_linear_modules
             )
+            self.peft_config = peft_config
+            self.lora_model = peft.get_peft_model(self.diffusion_model, peft_config)
+            if is_main_process():
+                self.lora_model.print_trainable_parameters()
+            for name, p in self.diffusion_model.named_parameters():
+                p.original_name = name
+                if p.requires_grad:
+                    p.data = p.data.to(adapter_config['dtype'])
+        elif adapter_type == 'lokr':
+            from lycoris import create_lycoris
+            kw = {
+                "linear_dim": adapter_config['rank'],
+                "linear_alpha": adapter_config['alpha'],
+                "algo": adapter_config.get('algo', 'lokr'),
+                "dropout": adapter_config.get('dropout', 0.0),
+                "rank_dropout": adapter_config.get('rank_dropout', 0.0),
+                "module_dropout": adapter_config.get('module_dropout', 0.0),
+                "use_tucker": adapter_config.get('use_tucker', False),
+                "use_scalar": adapter_config.get('use_scalar', False),
+                "use_cp": adapter_config.get('use_cp', False),
+                "decompose_both": adapter_config.get('decompose_both', False),
+                "factor": adapter_config.get('decompose_factor', -1),
+                "dora_wd": adapter_config.get('dora_wd', False),
+                "preset": adapter_config.get('preset', 'full'),
+                "train_norm": adapter_config.get('train_norm', False),
+            }
+            if 'conv_dim' in adapter_config:
+                kw['conv_dim'] = adapter_config['conv_dim']
+                kw['conv_alpha'] = adapter_config['alpha']
+
+            self.lora_model = create_lycoris(self.diffusion_model, 1.0, **kw)
+            self.lora_model.apply_to()
+
+            if is_main_process():
+                print(f"Created LyCORIS LoKr module with config: {kw}")
+
+            for name, p in self.diffusion_model.named_parameters():
+                p.original_name = name
+                if p.requires_grad:
+                    p.data = p.data.to(adapter_config['dtype'])
+
+            # Ensure all LyCORIS parameters are on the correct device and dtype
+            for module in self.lora_model.modules():
+                for p in module.parameters():
+                    p.data = p.data.to(device='cuda', dtype=adapter_config['dtype'])
         else:
             raise NotImplementedError(f'Adapter type {adapter_type} is not implemented')
-        self.peft_config = peft_config
-        self.lora_model = peft.get_peft_model(self.diffusion_model, peft_config)
-        if is_main_process():
-            self.lora_model.print_trainable_parameters()
-        for name, p in self.diffusion_model.named_parameters():
-            p.original_name = name
-            if p.requires_grad:
-                p.data = p.data.to(adapter_config['dtype'])
 
     def save_adapter(self, save_dir, sd):
         self.peft_config.save_pretrained(save_dir)

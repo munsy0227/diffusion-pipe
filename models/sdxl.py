@@ -470,6 +470,9 @@ class SDXLPipeline(BasePipeline):
             # But all these different formats are a mess and I hardly understand it. This seems to work though.
             kohya_sd = diffusers.utils.state_dict_utils.convert_state_dict_to_kohya(peft_state_dict)
             safetensors.torch.save_file(kohya_sd, save_dir / 'lora.safetensors', metadata={'format': 'pt'})
+        elif adapter_type == 'lokr':
+            from safetensors.torch import save_file
+            save_file(peft_state_dict, save_dir / 'adapter_model.safetensors', metadata={'format': 'pt'})
         else:
             raise NotImplementedError(f'Adapter type {adapter_type} is not implemented')
 

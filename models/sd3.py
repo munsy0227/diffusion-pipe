@@ -61,7 +61,14 @@ class SD3Pipeline(BasePipeline):
         return [self.text_encoder, self.text_encoder_2, self.text_encoder_3]
 
     def save_adapter(self, save_dir, peft_state_dict):
-        self.save_lora_weights(save_dir, transformer_lora_layers=peft_state_dict)
+        adapter_type = self.config['adapter']['type']
+        if adapter_type == 'lora':
+            self.save_lora_weights(save_dir, transformer_lora_layers=peft_state_dict)
+        elif adapter_type == 'lokr':
+            from safetensors.torch import save_file
+            save_file(peft_state_dict, save_dir / 'adapter_model.safetensors', metadata={'format': 'pt'})
+        else:
+            raise NotImplementedError(f'Adapter type {adapter_type} is not implemented')
 
     def save_model(self, save_dir, diffusers_sd):
         raise NotImplementedError()
